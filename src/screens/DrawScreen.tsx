@@ -12,12 +12,12 @@ import {
 import Svg, { Path } from 'react-native-svg';
 import DrawingCanvas, { DrawingCanvasRef } from '../components/DrawingCanvas';
 import { COLORS } from '../theme';
-import { useAppStore } from '../store/useAppStore';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MIN_SIZE = 2;
 const MAX_SIZE = 30;
 const SLIDER_HEIGHT = 140;
+const EDITOR_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 interface Props {
   route?: { params?: { imageUri?: string } };
@@ -54,15 +54,16 @@ const yToSize = (y: number) => {
 
 const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
   const imageUri = route?.params?.imageUri;
-  const setMainImagePaths = useAppStore((s) => s.setMainImagePaths);
-
   const [brushColor, setBrushColor] = useState('#FF3B30');
   const [sliderVisible, setSliderVisible] = useState(false);
   const [canvasKey, setCanvasKey] = useState(0);
   const canvasRef = useRef<DrawingCanvasRef>(null);
 
-  const [canvasHeight, setCanvasHeight] = useState(SCREEN_WIDTH * 1.2);
-  const canvasHeightRef = useRef(SCREEN_WIDTH * 1.2);
+  const [imgNaturalWidth, setImgNaturalWidth] = useState(SCREEN_WIDTH);
+  const [imgNaturalHeight, setImgNaturalHeight] = useState(EDITOR_HEIGHT);
+  const imgNaturalWidthRef = useRef(SCREEN_WIDTH);
+  const imgNaturalHeightRef = useRef(EDITOR_HEIGHT);
+  const initialFitScaleRef = useRef(1);
 
   const [brushSize, setBrushSize] = useState(7);
   const [sliderThumbY, setSliderThumbY] = useState(sizeToThumbY(7));
@@ -77,10 +78,12 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
     setSliderThumbY(y);
   };
 
+  // ── Slider PanResponder ──────────────────────────────────────────────────
+  // Usa Capture para interceptar el evento ANTES de que llegue al canvasPanResponder
   const sliderPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
         sliderStartY.current = evt.nativeEvent.pageY;
         sliderStartThumbY.current = sliderThumbYRef.current;
@@ -100,65 +103,123 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
     })
   ).current;
 
+  // ── Zoom / Pan state ─────────────────────────────────────────────────────
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
-  const lastScale = useRef(1);
-  const lastDistance = useRef<number | null>(null);
-  const lastTranslate = useRef({ x: 0, y: 0 });
-  const lastMidpoint = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+  const translateXRef = useRef(0);
+  const translateYRef = useRef(0);
 
-  const getDistance = (touches: any[]) => {
-    const dx = touches[0].pageX - touches[1].pageX;
-    const dy = touches[0].pageY - touches[1].pageY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const getMidpoint = (touches: any[]) => ({
-    x: (touches[0].pageX + touches[1].pageX) / 2,
-    y: (touches[0].pageY + touches[1].pageY) / 2,
+  const gesture = useRef({
+    active: false,       // true cuando el canvasPanResponder tiene el gesto
+    lastDist: 0,
+    lastScale: 1,
+    lastTx: 0,
+    lastTy: 0,
+    lastMidX: 0,
+    lastMidY: 0,
   });
 
-  const clampTranslate = (tx: number, ty: number, s: number) => {
-    const maxX = (SCREEN_WIDTH * (s - 1)) / 2;
-    const maxY = (canvasHeightRef.current * (s - 1)) / 2;
+  const clamp = (tx: number, ty: number, s: number) => {
+    const visW = imgNaturalWidthRef.current * s;
+    const visH = imgNaturalHeightRef.current * s;
+    const maxTx = Math.max(0, (visW - SCREEN_WIDTH) / 2);
+    const maxTy = Math.max(0, (visH - EDITOR_HEIGHT) / 2);
     return {
-      x: Math.max(-maxX, Math.min(maxX, tx)),
-      y: Math.max(-maxY, Math.min(maxY, ty)),
+      x: Math.max(-maxTx, Math.min(maxTx, tx)),
+      y: Math.max(-maxTy, Math.min(maxTy, ty)),
     };
   };
 
-  const zoomPanResponder = useRef(
+  const applyTransform = (s: number, tx: number, ty: number) => {
+    const c = clamp(tx, ty, s);
+    scaleRef.current = s;
+    translateXRef.current = c.x;
+    translateYRef.current = c.y;
+    setScale(s);
+    setTranslateX(c.x);
+    setTranslateY(c.y);
+  };
+
+  // ── Canvas PanResponder — SOLO se activa con 2 dedos ────────────────────
+  // Con 1 dedo el evento pasa directo al DrawingCanvas para dibujar.
+  const canvasPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
-      onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
+      // Solo capturamos cuando hay 2 o más dedos
+      onStartShouldSetPanResponder: (evt) =>
+        evt.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (evt) =>
+        evt.nativeEvent.touches.length >= 2,
+
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length === 2) {
-          lastDistance.current = getDistance(touches);
-          lastMidpoint.current = getMidpoint(touches);
-          lastScale.current = scale;
-          lastTranslate.current = { x: translateX, y: translateY };
-        }
+        if (touches.length < 2) return;
+        const g = gesture.current;
+        const dx = touches[0].pageX - touches[1].pageX;
+        const dy = touches[0].pageY - touches[1].pageY;
+        g.active = true;
+        g.lastDist = Math.sqrt(dx * dx + dy * dy);
+        g.lastScale = scaleRef.current;
+        g.lastTx = translateXRef.current;
+        g.lastTy = translateYRef.current;
+        g.lastMidX = (touches[0].pageX + touches[1].pageX) / 2;
+        g.lastMidY = (touches[0].pageY + touches[1].pageY) / 2;
       },
+
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length === 2 && lastDistance.current !== null) {
-          const newScale = Math.max(1, Math.min(4,
-            lastScale.current * (getDistance(touches) / lastDistance.current)
-          ));
-          const mid = getMidpoint(touches);
-          const rawX = lastTranslate.current.x + (mid.x - lastMidpoint.current.x);
-          const rawY = lastTranslate.current.y + (mid.y - lastMidpoint.current.y);
-          const clamped = clampTranslate(rawX, rawY, newScale);
-          setScale(newScale);
-          setTranslateX(clamped.x);
-          setTranslateY(clamped.y);
-        }
+        if (touches.length < 2) return;
+        const g = gesture.current;
+
+        const dx = touches[0].pageX - touches[1].pageX;
+        const dy = touches[0].pageY - touches[1].pageY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const midX = (touches[0].pageX + touches[1].pageX) / 2;
+        const midY = (touches[0].pageY + touches[1].pageY) / 2;
+
+        const minScale = initialFitScaleRef.current;
+        const newScale = Math.max(minScale, Math.min(6, g.lastScale * (dist / g.lastDist)));
+
+        // Pan simultáneo al zoom: seguimos el punto medio entre los dedos
+        const rawTx = g.lastTx + (midX - g.lastMidX);
+        const rawTy = g.lastTy + (midY - g.lastMidY);
+
+        applyTransform(newScale, rawTx, rawTy);
       },
-      onPanResponderRelease: () => { lastDistance.current = null; },
+
+      onPanResponderRelease: () => {
+        gesture.current.active = false;
+      },
+      onPanResponderTerminate: () => {
+        gesture.current.active = false;
+      },
     })
   ).current;
+
+  const handleImageLoad = (e: any) => {
+    const { width, height } = e.nativeEvent.source;
+    const fitScale = Math.min(SCREEN_WIDTH / width, EDITOR_HEIGHT / height);
+
+    imgNaturalWidthRef.current = width;
+    imgNaturalHeightRef.current = height;
+    initialFitScaleRef.current = fitScale;
+
+    setImgNaturalWidth(width);
+    setImgNaturalHeight(height);
+
+    scaleRef.current = fitScale;
+    translateXRef.current = 0;
+    translateYRef.current = 0;
+    setScale(fitScale);
+    setTranslateX(0);
+    setTranslateY(0);
+  };
+
+  const handleReset = () => {
+    setCanvasKey((k) => k + 1);
+    applyTransform(initialFitScaleRef.current, 0, 0);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -168,40 +229,38 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.headerBtn}>Atrás</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Seleccionar zona</Text>
-        <TouchableOpacity onPress={() => {
-          setCanvasKey((k) => k + 1);
-          setScale(1);
-          setTranslateX(0);
-          setTranslateY(0);
-        }}>
+        <TouchableOpacity onPress={handleReset}>
           <Text style={[styles.headerBtn, { color: COLORS.error }]}>Limpiar</Text>
         </TouchableOpacity>
       </View>
 
-      <View
-        style={[styles.canvasWrapper, { height: canvasHeight }]}
-        {...zoomPanResponder.panHandlers}
-      >
-        <View style={{
-          transform: [{ scale }, { translateX }, { translateY }],
-          width: SCREEN_WIDTH,
-          height: canvasHeight,
-        }}>
+      {/*
+        canvasWrapper escucha solo gestos de 2 dedos.
+        Con 1 dedo el evento pasa directamente al DrawingCanvas.
+        El sliderPanel está FUERA del canvasPanResponder para evitar conflictos.
+      */}
+      <View style={styles.canvasWrapper} {...canvasPanResponder.panHandlers}>
+
+        {/* Imagen + canvas de dibujo */}
+        <View style={[
+          styles.imageContainer,
+          {
+            width: imgNaturalWidth,
+            height: imgNaturalHeight,
+            left: (SCREEN_WIDTH - imgNaturalWidth) / 2,
+            top: (EDITOR_HEIGHT - imgNaturalHeight) / 2,
+            transform: [{ scale }, { translateX }, { translateY }],
+          },
+        ]}>
           {imageUri ? (
             <Image
               source={{ uri: imageUri }}
-              style={{ width: SCREEN_WIDTH, height: canvasHeight }}
+              style={{ width: imgNaturalWidth, height: imgNaturalHeight }}
               resizeMode="cover"
-              onLoad={(e) => {
-                const { width, height } = e.nativeEvent.source;
-                const ratio = height / width;
-                const h = SCREEN_WIDTH * ratio;
-                canvasHeightRef.current = h;
-                setCanvasHeight(h);
-              }}
+              onLoad={handleImageLoad}
             />
           ) : (
-            <View style={[{ width: SCREEN_WIDTH, height: canvasHeight }, styles.placeholder]}>
+            <View style={[{ width: SCREEN_WIDTH, height: EDITOR_HEIGHT }, styles.placeholder]}>
               <Text style={styles.placeholderText}>Sin imagen</Text>
             </View>
           )}
@@ -209,14 +268,15 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
             <DrawingCanvas
               ref={canvasRef}
               key={canvasKey}
-              width={SCREEN_WIDTH}
-              height={canvasHeight}
+              width={imgNaturalWidth}
+              height={imgNaturalHeight}
               brushColor={brushColor}
               brushSize={brushSize}
             />
           </View>
         </View>
 
+        {/* Botón lápiz — fuera del área transformada */}
         <TouchableOpacity
           style={styles.sliderToggleBtn}
           onPress={() => setSliderVisible((v) => !v)}
@@ -224,6 +284,11 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           <PenIcon />
         </TouchableOpacity>
 
+        {/*
+          sliderPanel tiene su propio PanResponder con Capture=true,
+          lo que significa que intercepta el toque ANTES de que llegue
+          al canvasPanResponder del padre. Sin conflictos.
+        */}
         {sliderVisible && (
           <View style={styles.sliderPanel}>
             <Text style={styles.sliderLabel}>{brushSize}</Text>
@@ -257,19 +322,16 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
             <TouchableOpacity
               key={c}
               onPress={() => setBrushColor(c)}
-              style={[styles.colorDot, { backgroundColor: c }, brushColor === c && styles.colorDotSelected]}
+              style={[
+                styles.colorDot,
+                { backgroundColor: c },
+                brushColor === c && styles.colorDotSelected,
+              ]}
             />
           ))}
         </View>
 
-        <TouchableOpacity
-          style={styles.confirmBtn}
-          onPress={() => {
-            const paths = canvasRef.current?.getPaths() ?? [];
-            setMainImagePaths(paths);
-            navigation?.navigate('Materials');
-          }}
-        >
+        <TouchableOpacity style={styles.confirmBtn}>
           <Text style={styles.confirmBtnText}>Confirmar selección</Text>
         </TouchableOpacity>
       </View>
@@ -293,8 +355,12 @@ const styles = StyleSheet.create({
   headerBtn: { fontSize: 15, color: COLORS.accent },
   canvasWrapper: {
     width: SCREEN_WIDTH,
+    height: EDITOR_HEIGHT,
     overflow: 'hidden',
     backgroundColor: COLORS.surface,
+  },
+  imageContainer: {
+    position: 'absolute',
   },
   placeholder: {
     backgroundColor: COLORS.surface,
