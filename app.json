@@ -24,6 +24,15 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceso a tu galería para subir imágenes.",
+          "cameraPermission": "La app necesita acceso a tu cámara para tomar fotos."
+        }
+      ]
+    ]
   }
 }

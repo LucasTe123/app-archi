@@ -5,25 +5,25 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadows } from '../theme';
 import { pickImageFromLibrary, pickImageFromCamera } from '../services/imageService';
 import { useAppStore } from '../store/useAppStore';
 
 export default function UploadScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
-  const { mainImage, setMainImage } = useAppStore();
+  const { mainImageUri, setMainImage } = useAppStore(); // ✅ mainImageUri, no mainImage
 
   async function handlePickLibrary() {
     setLoading(true);
     const image = await pickImageFromLibrary();
     setLoading(false);
-    if (image) setMainImage(image);
+    if (image) setMainImage(image.uri); // ✅ pasamos solo el uri
     else Alert.alert('No image selected');
   }
 
@@ -31,7 +31,7 @@ export default function UploadScreen({ navigation }: any) {
     setLoading(true);
     const image = await pickImageFromCamera();
     setLoading(false);
-    if (image) setMainImage(image);
+    if (image) setMainImage(image.uri); // ✅ pasamos solo el uri
     else Alert.alert('Permission denied or cancelled');
   }
 
@@ -45,13 +45,12 @@ export default function UploadScreen({ navigation }: any) {
         <Text style={styles.subtitle}>Upload the image you want to edit.</Text>
       </View>
 
-      {/* Preview de imagen */}
       <View style={styles.previewArea}>
         {loading ? (
           <ActivityIndicator size="large" color={colors.accent} />
-        ) : mainImage ? (
+        ) : mainImageUri ? ( // ✅ mainImageUri
           <Image
-            source={{ uri: mainImage.uri }}
+            source={{ uri: mainImageUri }} // ✅ mainImageUri directamente
             style={styles.imagePreview}
             resizeMode="cover"
           />
@@ -62,7 +61,6 @@ export default function UploadScreen({ navigation }: any) {
         )}
       </View>
 
-      {/* Botones */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.buttonPrimary}
@@ -80,10 +78,10 @@ export default function UploadScreen({ navigation }: any) {
           <Text style={styles.buttonSecondaryText}>Take a photo</Text>
         </TouchableOpacity>
 
-        {mainImage && (
+        {mainImageUri && ( // ✅ mainImageUri
           <TouchableOpacity
             style={styles.buttonAccent}
-            onPress={() => navigation.navigate('Draw', { imageUri: mainImage?.uri })}
+            onPress={() => navigation.navigate('Draw', { imageUri: mainImageUri })} // ✅
             activeOpacity={0.8}
           >
             <Text style={styles.buttonPrimaryText}>Continue →</Text>

@@ -10,7 +10,7 @@ export async function pickImageFromLibrary(): Promise<ImageAsset | null> {
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ fix
     allowsEditing: false,
     quality: 1,
   });
