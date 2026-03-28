@@ -74,3 +74,6 @@ export const shadows = {
     elevation: 10,
   },
 };
+// ← LÍNEAS NUEVAS
+export const COLORS = colors;
+export const FONTS = typography;

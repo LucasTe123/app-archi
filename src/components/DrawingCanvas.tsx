@@ -1,17 +1,19 @@
-import React, { useRef, useState } from 'react';
-import { View, PanResponder, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { View, PanResponder, StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-interface Point {
-  x: number;
-  y: number;
-}
+interface Point { x: number; y: number; }
 
 interface Stroke {
   points: Point[];
   color: string;
+  size: number;
+}
+
+export interface DrawingCanvasRef {
+  undo: () => void;
+  redo: () => void;
+  clear: () => void;
 }
 
 interface Props {
@@ -30,72 +32,81 @@ const pointsToPath = (points: Point[]): string => {
   return d.join(' ');
 };
 
-const DrawingCanvas: React.FC<Props> = ({
+const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(({
   width,
   height,
   brushColor = '#FF3B30',
   brushSize = 4,
   onStrokesChange,
-}) => {
+}, ref) => {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const redoStack = useRef<Stroke[]>([]);
   const currentStroke = useRef<Point[]>([]);
+  const strokesRef = useRef<Stroke[]>([]);
+
+  // Mantener strokesRef sincronizado
+  const updateStrokes = (newStrokes: Stroke[]) => {
+    strokesRef.current = newStrokes;
+    setStrokes(newStrokes);
+    onStrokesChange?.(newStrokes);
+  };
+
+  // Exponer undo/redo/clear al padre
+  useImperativeHandle(ref, () => ({
+    undo: () => {
+      if (strokesRef.current.length === 0) return;
+      const last = strokesRef.current[strokesRef.current.length - 1];
+      redoStack.current.push(last);
+      updateStrokes(strokesRef.current.slice(0, -1));
+    },
+    redo: () => {
+      if (redoStack.current.length === 0) return;
+      const restored = redoStack.current.pop()!;
+      updateStrokes([...strokesRef.current, restored]);
+    },
+    clear: () => {
+      redoStack.current = [];
+      updateStrokes([]);
+    },
+  }));
 
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
 
     onPanResponderGrant: (evt) => {
+      redoStack.current = []; // nuevo trazo borra el redo
       const { locationX, locationY } = evt.nativeEvent;
       currentStroke.current = [{ x: locationX, y: locationY }];
     },
 
     onPanResponderMove: (evt) => {
       const { locationX, locationY } = evt.nativeEvent;
-      currentStroke.current = [
-        ...currentStroke.current,
-        { x: locationX, y: locationY },
-      ];
-      // Forzar re-render para ver el trazo en tiempo real
-      setStrokes((prev) => {
-        const updated = [...prev];
-        updated[updated.length] = {
-          points: [...currentStroke.current],
-          color: brushColor,
-        };
-        return updated;
-      });
+      currentStroke.current = [...currentStroke.current, { x: locationX, y: locationY }];
+      setStrokes([
+        ...strokesRef.current,
+        { points: [...currentStroke.current], color: brushColor, size: brushSize },
+      ]);
     },
 
     onPanResponderRelease: () => {
       if (currentStroke.current.length > 0) {
-        const newStrokes = [
-          ...strokes,
-          { points: currentStroke.current, color: brushColor },
-        ];
-        setStrokes(newStrokes);
-        onStrokesChange?.(newStrokes);
+        const newStroke = { points: currentStroke.current, color: brushColor, size: brushSize };
+        updateStrokes([...strokesRef.current, newStroke]);
         currentStroke.current = [];
       }
     },
   });
 
-  const clearCanvas = () => {
-    setStrokes([]);
-    onStrokesChange?.([]);
-  };
-
   return (
-    <View
-      style={[styles.container, { width, height }]}
-      {...panResponder.panHandlers}
-    >
+    <View style={[styles.container, { width, height }]} {...panResponder.panHandlers}>
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
         {strokes.map((stroke, index) => (
           <Path
             key={index}
             d={pointsToPath(stroke.points)}
             stroke={stroke.color}
-            strokeWidth={brushSize}
+            strokeWidth={stroke.size}
             strokeLinecap="round"
             strokeLinejoin="round"
             fill="none"
@@ -104,17 +115,10 @@ const DrawingCanvas: React.FC<Props> = ({
       </Svg>
     </View>
   );
-};
-
-// Exportamos clearCanvas como ref para poder llamarlo desde afuera
-export interface DrawingCanvasRef {
-  clear: () => void;
-}
+});
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: 'transparent',
-  },
+  container: { backgroundColor: 'transparent' },
 });
 
 export default DrawingCanvas;
