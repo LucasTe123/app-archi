@@ -8,6 +8,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import UploadScreen from './src/screens/UploadScreen';
 import DrawScreen from './src/screens/DrawScreen';
 import DrawMaskScreen from './src/screens/DrawMaskScreen';
+import MaterialsScreen from './src/screens/MaterialsScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -32,6 +33,7 @@ export default function App() {
           <Stack.Screen name="Upload" component={UploadScreen} />
           <Stack.Screen name="Draw" component={DrawScreen} />
           <Stack.Screen name="DrawMask" component={DrawMaskScreen} />
+          <Stack.Screen name="Materials" component={MaterialsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

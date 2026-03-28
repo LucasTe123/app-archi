@@ -14,6 +14,7 @@ export interface DrawingCanvasRef {
   undo: () => void;
   redo: () => void;
   clear: () => void;
+  getPaths: () => Stroke[];
 }
 
 interface Props {
@@ -32,26 +33,21 @@ const pointsToPath = (points: Point[]): string => {
   return d.join(' ');
 };
 
-const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(({
-  width,
-  height,
-  brushColor = '#FF3B30',
-  brushSize = 4,
-  onStrokesChange,
-}, ref) => {
+const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>((
+  { width, height, brushColor = '#FF3B30', brushSize = 4, onStrokesChange },
+  ref
+) => {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const redoStack = useRef<Stroke[]>([]);
   const currentStroke = useRef<Point[]>([]);
   const strokesRef = useRef<Stroke[]>([]);
 
-  // Mantener strokesRef sincronizado
   const updateStrokes = (newStrokes: Stroke[]) => {
     strokesRef.current = newStrokes;
     setStrokes(newStrokes);
     onStrokesChange?.(newStrokes);
   };
 
-  // Exponer undo/redo/clear al padre
   useImperativeHandle(ref, () => ({
     undo: () => {
       if (strokesRef.current.length === 0) return;
@@ -68,6 +64,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(({
       redoStack.current = [];
       updateStrokes([]);
     },
+    getPaths: () => strokesRef.current,
   }));
 
   const panResponder = PanResponder.create({
@@ -75,7 +72,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(({
     onMoveShouldSetPanResponder: () => true,
 
     onPanResponderGrant: (evt) => {
-      redoStack.current = []; // nuevo trazo borra el redo
+      redoStack.current = [];
       const { locationX, locationY } = evt.nativeEvent;
       currentStroke.current = [{ x: locationX, y: locationY }];
     },
