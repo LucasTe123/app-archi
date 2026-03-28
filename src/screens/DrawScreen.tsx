@@ -61,47 +61,41 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const [brushSize, setBrushSize] = useState(7);
   const [sliderThumbY, setSliderThumbY] = useState(sizeToThumbY(7));
-
   const sliderThumbYRef = useRef(sizeToThumbY(7));
   const sliderStartY = useRef<number>(0);
   const sliderStartThumbY = useRef<number>(sizeToThumbY(7));
+
+  const colorOptions = ['#FF3B30', '#FF9500', '#34C759', '#007AFF', '#FFFFFF'];
 
   const updateThumb = (y: number) => {
     sliderThumbYRef.current = y;
     setSliderThumbY(y);
   };
 
-  const colorOptions = ['#FF3B30', '#FF9500', '#34C759', '#007AFF', '#FFFFFF'];
-
   const sliderPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-
       onPanResponderGrant: (evt) => {
         sliderStartY.current = evt.nativeEvent.pageY;
         sliderStartThumbY.current = sliderThumbYRef.current;
       },
-
       onPanResponderMove: (evt) => {
         const dy = evt.nativeEvent.pageY - sliderStartY.current;
         const newThumbY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
-        const newSize = yToSize(newThumbY);
         updateThumb(newThumbY);
-        setBrushSize(newSize);
+        setBrushSize(yToSize(newThumbY));
       },
-
       onPanResponderRelease: (evt) => {
         const dy = evt.nativeEvent.pageY - sliderStartY.current;
         const newThumbY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
-        const newSize = yToSize(newThumbY);
         updateThumb(newThumbY);
-        setBrushSize(newSize);
+        setBrushSize(yToSize(newThumbY));
       },
     })
   ).current;
 
-  // Zoom
+  // Zoom + pan con límites — nunca muestra fondo negro
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
@@ -115,10 +109,20 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
     const dy = touches[0].pageY - touches[1].pageY;
     return Math.sqrt(dx * dx + dy * dy);
   };
+
   const getMidpoint = (touches: any[]) => ({
     x: (touches[0].pageX + touches[1].pageX) / 2,
     y: (touches[0].pageY + touches[1].pageY) / 2,
   });
+
+  const clampTranslate = (tx: number, ty: number, s: number) => {
+    const maxX = (SCREEN_WIDTH * (s - 1)) / 2;
+    const maxY = (CANVAS_HEIGHT * (s - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, tx)),
+      y: Math.max(-maxY, Math.min(maxY, ty)),
+    };
+  };
 
   const zoomPanResponder = useRef(
     PanResponder.create({
@@ -139,10 +143,13 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           const newScale = Math.max(1, Math.min(4,
             lastScale.current * (getDistance(touches) / lastDistance.current)
           ));
-          setScale(newScale);
           const mid = getMidpoint(touches);
-          setTranslateX(lastTranslate.current.x + (mid.x - lastMidpoint.current.x));
-          setTranslateY(lastTranslate.current.y + (mid.y - lastMidpoint.current.y));
+          const rawX = lastTranslate.current.x + (mid.x - lastMidpoint.current.x);
+          const rawY = lastTranslate.current.y + (mid.y - lastMidpoint.current.y);
+          const clamped = clampTranslate(rawX, rawY, newScale);
+          setScale(newScale);
+          setTranslateX(clamped.x);
+          setTranslateY(clamped.y);
         }
       },
       onPanResponderRelease: () => { lastDistance.current = null; },
@@ -159,7 +166,9 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
         <Text style={styles.headerTitle}>Seleccionar zona</Text>
         <TouchableOpacity onPress={() => {
           setCanvasKey((k) => k + 1);
-          setScale(1); setTranslateX(0); setTranslateY(0);
+          setScale(1);
+          setTranslateX(0);
+          setTranslateY(0);
         }}>
           <Text style={[styles.headerBtn, { color: COLORS.error }]}>Limpiar</Text>
         </TouchableOpacity>
@@ -172,7 +181,7 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           height: CANVAS_HEIGHT,
         }}>
           {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+            <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
           ) : (
             <View style={[styles.image, styles.placeholder]}>
               <Text style={styles.placeholderText}>Sin imagen</Text>
@@ -202,13 +211,11 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
         {sliderVisible && (
           <View style={styles.sliderPanel}>
             <Text style={styles.sliderLabel}>{brushSize}</Text>
-
             <View style={styles.trackContainer} {...sliderPanResponder.panHandlers}>
               <View style={styles.trackLine} />
               <View style={[styles.trackFill, { height: SLIDER_HEIGHT - sliderThumbY }]} />
               <View style={[styles.thumb, { top: sliderThumbY - 10 }]} />
             </View>
-
             <View style={{
               width: Math.max(4, brushSize * 0.65),
               height: Math.max(4, brushSize * 0.65),
