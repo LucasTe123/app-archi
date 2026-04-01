@@ -6,16 +6,14 @@ import { StyleSheet } from 'react-native';
 
 import HomeScreen from './src/screens/HomeScreen';
 import UploadScreen from './src/screens/UploadScreen';
-import DrawScreen from './src/screens/DrawScreen';
-import DrawMaskScreen from './src/screens/DrawMaskScreen';
 import MaterialsScreen from './src/screens/MaterialsScreen';
+import EditorScreen from './src/screens/EditorScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Upload: undefined;
-  Draw: { imageUri?: string };
-  DrawMask: undefined;
   Materials: undefined;
+  Editor: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -32,9 +30,8 @@ export default function App() {
         >
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Upload" component={UploadScreen} />
-          <Stack.Screen name="Draw" component={DrawScreen} />
-          <Stack.Screen name="DrawMask" component={DrawMaskScreen} />
           <Stack.Screen name="Materials" component={MaterialsScreen} />
+          <Stack.Screen name="Editor" component={EditorScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

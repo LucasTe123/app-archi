@@ -81,7 +81,7 @@ export default function UploadScreen({ navigation }: any) {
         {mainImageUri && ( // ✅ mainImageUri
           <TouchableOpacity
             style={styles.buttonAccent}
-            onPress={() => navigation.navigate('Draw', { imageUri: mainImageUri })} // ✅
+            onPress={() => navigation.navigate('Materials')} // ✅
             activeOpacity={0.8}
           >
             <Text style={styles.buttonPrimaryText}>Continue →</Text>
