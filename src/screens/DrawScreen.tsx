@@ -1,23 +1,17 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Image,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Text,
-  SafeAreaView,
-  PanResponder,
+  View, Image, StyleSheet, Dimensions,
+  TouchableOpacity, Text, SafeAreaView, PanResponder,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import DrawingCanvas, { DrawingCanvasRef } from '../components/DrawingCanvas';
 import { COLORS } from '../theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const EDITOR_HEIGHT = SCREEN_HEIGHT * 0.65;
 const MIN_SIZE = 2;
 const MAX_SIZE = 30;
 const SLIDER_HEIGHT = 140;
-const EDITOR_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 interface Props {
   route?: { params?: { imageUri?: string } };
@@ -30,14 +24,12 @@ const UndoIcon = () => (
     <Path d="M3 10l4-4M3 10l4 4" stroke={COLORS.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-
 const RedoIcon = () => (
   <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
     <Path d="M21 10H11a6 6 0 0 0 0 12h6" stroke={COLORS.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     <Path d="M21 10l-4-4M21 10l-4 4" stroke={COLORS.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-
 const PenIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
     <Path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke={COLORS.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -46,7 +38,6 @@ const PenIcon = () => (
 
 const sizeToThumbY = (size: number) =>
   SLIDER_HEIGHT * (1 - (size - MIN_SIZE) / (MAX_SIZE - MIN_SIZE));
-
 const yToSize = (y: number) => {
   const ratio = 1 - Math.max(0, Math.min(1, y / SLIDER_HEIGHT));
   return Math.round(MIN_SIZE + ratio * (MAX_SIZE - MIN_SIZE));
@@ -54,32 +45,60 @@ const yToSize = (y: number) => {
 
 const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
   const imageUri = route?.params?.imageUri;
+
+  const canvasRef = useRef<DrawingCanvasRef>(null);
   const [brushColor, setBrushColor] = useState('#FF3B30');
+  const [brushSize, setBrushSize] = useState(7);
   const [sliderVisible, setSliderVisible] = useState(false);
   const [canvasKey, setCanvasKey] = useState(0);
-  const canvasRef = useRef<DrawingCanvasRef>(null);
-
-  const [imgNaturalWidth, setImgNaturalWidth] = useState(SCREEN_WIDTH);
-  const [imgNaturalHeight, setImgNaturalHeight] = useState(EDITOR_HEIGHT);
-  const imgNaturalWidthRef = useRef(SCREEN_WIDTH);
-  const imgNaturalHeightRef = useRef(EDITOR_HEIGHT);
-  const initialFitScaleRef = useRef(1);
-
-  const [brushSize, setBrushSize] = useState(7);
   const [sliderThumbY, setSliderThumbY] = useState(sizeToThumbY(7));
   const sliderThumbYRef = useRef(sizeToThumbY(7));
-  const sliderStartY = useRef<number>(0);
-  const sliderStartThumbY = useRef<number>(sizeToThumbY(7));
-
+  const sliderStartY = useRef(0);
+  const sliderStartThumbY = useRef(sizeToThumbY(7));
   const colorOptions = ['#FF3B30', '#FF9500', '#34C759', '#007AFF', '#FFFFFF'];
 
-  const updateThumb = (y: number) => {
-    sliderThumbYRef.current = y;
-    setSliderThumbY(y);
+  const [imgW, setImgW] = useState(SCREEN_WIDTH);
+  const [imgH, setImgH] = useState(EDITOR_HEIGHT);
+  const imgWRef = useRef(SCREEN_WIDTH);
+  const imgHRef = useRef(EDITOR_HEIGHT);
+  const minScaleRef = useRef(1);
+
+  const [scale, setScale] = useState(1);
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const scaleRef = useRef(1);
+  const txRef = useRef(0);
+  const tyRef = useRef(0);
+
+  const applyTransform = (newScale: number, newTx: number, newTy: number) => {
+    scaleRef.current = newScale;
+    txRef.current = newTx;
+    tyRef.current = newTy;
+    setScale(newScale);
+    setTx(newTx);
+    setTy(newTy);
   };
 
-  // ── Slider PanResponder ──────────────────────────────────────────────────
-  // Usa Capture para interceptar el evento ANTES de que llegue al canvasPanResponder
+  const handleImageLoad = (e: any) => {
+    const { width, height } = e.nativeEvent.source;
+    const fitScale = Math.min(SCREEN_WIDTH / width, EDITOR_HEIGHT / height);
+    imgWRef.current = width;
+    imgHRef.current = height;
+    minScaleRef.current = fitScale;
+    setImgW(width);
+    setImgH(height);
+    applyTransform(fitScale, 0, 0);
+  };
+
+  const gesture = useRef({
+    lastDist: 0,
+    lastScale: 1,
+    lastTx: 0,
+    lastTy: 0,
+    lastMidX: 0,
+    lastMidY: 0,
+  });
+
   const sliderPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => true,
@@ -90,63 +109,23 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
       },
       onPanResponderMove: (evt) => {
         const dy = evt.nativeEvent.pageY - sliderStartY.current;
-        const newThumbY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
-        updateThumb(newThumbY);
-        setBrushSize(yToSize(newThumbY));
+        const newY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
+        sliderThumbYRef.current = newY;
+        setSliderThumbY(newY);
+        setBrushSize(yToSize(newY));
       },
       onPanResponderRelease: (evt) => {
         const dy = evt.nativeEvent.pageY - sliderStartY.current;
-        const newThumbY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
-        updateThumb(newThumbY);
-        setBrushSize(yToSize(newThumbY));
+        const newY = Math.max(0, Math.min(SLIDER_HEIGHT, sliderStartThumbY.current + dy));
+        sliderThumbYRef.current = newY;
+        setSliderThumbY(newY);
+        setBrushSize(yToSize(newY));
       },
     })
   ).current;
 
-  // ── Zoom / Pan state ─────────────────────────────────────────────────────
-  const [scale, setScale] = useState(1);
-  const [translateX, setTranslateX] = useState(0);
-  const [translateY, setTranslateY] = useState(0);
-  const scaleRef = useRef(1);
-  const translateXRef = useRef(0);
-  const translateYRef = useRef(0);
-
-  const gesture = useRef({
-    active: false,       // true cuando el canvasPanResponder tiene el gesto
-    lastDist: 0,
-    lastScale: 1,
-    lastTx: 0,
-    lastTy: 0,
-    lastMidX: 0,
-    lastMidY: 0,
-  });
-
-  const clamp = (tx: number, ty: number, s: number) => {
-    const visW = imgNaturalWidthRef.current * s;
-    const visH = imgNaturalHeightRef.current * s;
-    const maxTx = Math.max(0, (visW - SCREEN_WIDTH) / 2);
-    const maxTy = Math.max(0, (visH - EDITOR_HEIGHT) / 2);
-    return {
-      x: Math.max(-maxTx, Math.min(maxTx, tx)),
-      y: Math.max(-maxTy, Math.min(maxTy, ty)),
-    };
-  };
-
-  const applyTransform = (s: number, tx: number, ty: number) => {
-    const c = clamp(tx, ty, s);
-    scaleRef.current = s;
-    translateXRef.current = c.x;
-    translateYRef.current = c.y;
-    setScale(s);
-    setTranslateX(c.x);
-    setTranslateY(c.y);
-  };
-
-  // ── Canvas PanResponder — SOLO se activa con 2 dedos ────────────────────
-  // Con 1 dedo el evento pasa directo al DrawingCanvas para dibujar.
   const canvasPanResponder = useRef(
     PanResponder.create({
-      // Solo capturamos cuando hay 2 o más dedos
       onStartShouldSetPanResponder: (evt) =>
         evt.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (evt) =>
@@ -158,11 +137,10 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
         const g = gesture.current;
         const dx = touches[0].pageX - touches[1].pageX;
         const dy = touches[0].pageY - touches[1].pageY;
-        g.active = true;
         g.lastDist = Math.sqrt(dx * dx + dy * dy);
-        g.lastScale = scaleRef.current;
-        g.lastTx = translateXRef.current;
-        g.lastTy = translateYRef.current;
+        g.lastScale = scaleRef.current;   // ✅ escala actual
+        g.lastTx = txRef.current;         // ✅ posición actual
+        g.lastTy = tyRef.current;         // ✅ posición actual
         g.lastMidX = (touches[0].pageX + touches[1].pageX) / 2;
         g.lastMidY = (touches[0].pageY + touches[1].pageY) / 2;
       },
@@ -178,52 +156,39 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
         const midX = (touches[0].pageX + touches[1].pageX) / 2;
         const midY = (touches[0].pageY + touches[1].pageY) / 2;
 
-        const minScale = initialFitScaleRef.current;
-        const newScale = Math.max(minScale, Math.min(6, g.lastScale * (dist / g.lastDist)));
+        const newScale = Math.max(
+          minScaleRef.current,
+          Math.min(6, g.lastScale * (dist / g.lastDist))
+        );
 
-        // Pan simultáneo al zoom: seguimos el punto medio entre los dedos
-        const rawTx = g.lastTx + (midX - g.lastMidX);
-        const rawTy = g.lastTy + (midY - g.lastMidY);
+        const scaleRatio = newScale / g.lastScale;
+        // ✅ Zoom anclado al punto medio + pan simultáneo
+        const newTx = midX - (midX - g.lastTx) * scaleRatio + (midX - g.lastMidX);
+        const newTy = midY - (midY - g.lastTy) * scaleRatio + (midY - g.lastMidY);
 
-        applyTransform(newScale, rawTx, rawTy);
+        applyTransform(newScale, newTx, newTy);
+
+        // ✅ Actualizamos con newTx/newTy, NO con txRef.current
+        g.lastDist = dist;
+        g.lastScale = newScale;
+        g.lastTx = newTx;
+        g.lastTy = newTy;
+        g.lastMidX = midX;
+        g.lastMidY = midY;
       },
 
-      onPanResponderRelease: () => {
-        gesture.current.active = false;
-      },
-      onPanResponderTerminate: () => {
-        gesture.current.active = false;
-      },
+      onPanResponderRelease: () => { },
+      onPanResponderTerminate: () => { },
     })
   ).current;
 
-  const handleImageLoad = (e: any) => {
-    const { width, height } = e.nativeEvent.source;
-    const fitScale = Math.min(SCREEN_WIDTH / width, EDITOR_HEIGHT / height);
-
-    imgNaturalWidthRef.current = width;
-    imgNaturalHeightRef.current = height;
-    initialFitScaleRef.current = fitScale;
-
-    setImgNaturalWidth(width);
-    setImgNaturalHeight(height);
-
-    scaleRef.current = fitScale;
-    translateXRef.current = 0;
-    translateYRef.current = 0;
-    setScale(fitScale);
-    setTranslateX(0);
-    setTranslateY(0);
-  };
-
   const handleReset = () => {
-    setCanvasKey((k) => k + 1);
-    applyTransform(initialFitScaleRef.current, 0, 0);
+    setCanvasKey(k => k + 1);
+    applyTransform(minScaleRef.current, 0, 0);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation?.goBack()}>
           <Text style={styles.headerBtn}>Atrás</Text>
@@ -234,28 +199,21 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/*
-        canvasWrapper escucha solo gestos de 2 dedos.
-        Con 1 dedo el evento pasa directamente al DrawingCanvas.
-        El sliderPanel está FUERA del canvasPanResponder para evitar conflictos.
-      */}
       <View style={styles.canvasWrapper} {...canvasPanResponder.panHandlers}>
-
-        {/* Imagen + canvas de dibujo */}
         <View style={[
           styles.imageContainer,
           {
-            width: imgNaturalWidth,
-            height: imgNaturalHeight,
-            left: (SCREEN_WIDTH - imgNaturalWidth) / 2,
-            top: (EDITOR_HEIGHT - imgNaturalHeight) / 2,
-            transform: [{ scale }, { translateX }, { translateY }],
+            width: imgW,
+            height: imgH,
+            left: (SCREEN_WIDTH - imgW) / 2,
+            top: (EDITOR_HEIGHT - imgH) / 2,
+            transform: [{ scale }, { translateX: tx }, { translateY: ty }],
           },
         ]}>
           {imageUri ? (
             <Image
               source={{ uri: imageUri }}
-              style={{ width: imgNaturalWidth, height: imgNaturalHeight }}
+              style={{ width: imgW, height: imgH }}
               resizeMode="cover"
               onLoad={handleImageLoad}
             />
@@ -268,27 +226,21 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
             <DrawingCanvas
               ref={canvasRef}
               key={canvasKey}
-              width={imgNaturalWidth}
-              height={imgNaturalHeight}
+              width={imgW}
+              height={imgH}
               brushColor={brushColor}
               brushSize={brushSize}
             />
           </View>
         </View>
 
-        {/* Botón lápiz — fuera del área transformada */}
         <TouchableOpacity
           style={styles.sliderToggleBtn}
-          onPress={() => setSliderVisible((v) => !v)}
+          onPress={() => setSliderVisible(v => !v)}
         >
           <PenIcon />
         </TouchableOpacity>
 
-        {/*
-          sliderPanel tiene su propio PanResponder con Capture=true,
-          lo que significa que intercepta el toque ANTES de que llegue
-          al canvasPanResponder del padre. Sin conflictos.
-        */}
         {sliderVisible && (
           <View style={styles.sliderPanel}>
             <Text style={styles.sliderLabel}>{brushSize}</Text>
@@ -335,7 +287,6 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           <Text style={styles.confirmBtnText}>Confirmar selección</Text>
         </TouchableOpacity>
       </View>
-
     </SafeAreaView>
   );
 };
