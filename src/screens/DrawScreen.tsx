@@ -283,9 +283,12 @@ const DrawScreen: React.FC<Props> = ({ route, navigation }) => {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.confirmBtn}>
-          <Text style={styles.confirmBtnText}>Confirmar selección</Text>
-        </TouchableOpacity>
+       <TouchableOpacity 
+  style={styles.confirmBtn}
+  onPress={() => navigation?.navigate('DrawMask')}
+>
+  <Text style={styles.confirmBtnText}>Confirmar selección</Text>
+</TouchableOpacity>
       </View>
     </SafeAreaView>
   );
