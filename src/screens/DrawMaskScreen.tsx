@@ -11,7 +11,7 @@ import { colors, typography, spacing, radius } from '../theme';
 import { useAppStore } from '../store/useAppStore';   // ← LÍNEA NUEVA
 
 export default function DrawMaskScreen({ navigation }: any) {
-  const { mainImage } = useAppStore();   // ← LÍNEA NUEVA
+  const { mainImageUri } = useAppStore();   // ← LÍNEA NUEVA
 
   return (
     <SafeAreaView style={styles.container}>
@@ -40,7 +40,7 @@ export default function DrawMaskScreen({ navigation }: any) {
 
         <TouchableOpacity
           style={styles.buttonPrimary}
-          onPress={() => navigation.navigate('Draw', { imageUri: mainImage?.uri })}  // ← CAMBIADO
+          onPress={() => navigation.navigate('Materials')}// ← CAMBIADO
           activeOpacity={0.8}
         >
           <Text style={styles.buttonPrimaryText}>Continue →</Text>
