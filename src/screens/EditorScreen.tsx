@@ -7,7 +7,9 @@ export default function EditorScreen() {
     <SafeAreaView style={styles.container}>
       <Text style={styles.label}>STEP 3 OF 3</Text>
       <Text style={styles.title}>Editor</Text>
-      <Text style={styles.subtitle}>Coming next — paint materials on main image.</Text>
+      <Text style={styles.subtitle}>
+        Coming next — paint materials on main image.
+      </Text>
     </SafeAreaView>
   );
 }
@@ -20,7 +22,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     justifyContent: 'center',
   },
-  label: { fontSize: typography.xs, color: colors.textFaint, letterSpacing: 3, marginBottom: spacing.sm },
-  title: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: '700', marginBottom: spacing.xs },
-  subtitle: { fontSize: typography.base, color: colors.textSecondary },
+  label: {
+    fontSize: typography.xs,
+    color: colors.textFaint,
+    letterSpacing: 3,
+    marginBottom: spacing.sm,
+  },
+  title: {
+    fontSize: typography.xl,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    fontSize: typography.base,
+    color: colors.textSecondary,
+  },
 });
