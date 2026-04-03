@@ -23,11 +23,12 @@ export default function App() {
     <GestureHandlerRootView style={styles.root}>
       <NavigationContainer>
         <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-            cardStyle: { backgroundColor: '#0A0A0A' },
-          }}
-        >
+  screenOptions={{
+    headerShown: false,
+    gestureEnabled: false,
+    cardStyle: { backgroundColor: '#0A0A0A' },
+  }}
+>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Upload" component={UploadScreen} />
           <Stack.Screen name="Materials" component={MaterialsScreen} />

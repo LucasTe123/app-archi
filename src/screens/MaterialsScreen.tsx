@@ -71,6 +71,20 @@ const getTouchMid = (t1: any, t2: any) => ({
   y: (t1.pageY + t2.pageY) / 2,
 });
 
+// ─── Color options (highlighter semitransparente) ─────────────────────────────
+interface ColorOption {
+  color: string;
+  opacity: number;
+}
+
+const COLOR_OPTIONS: ColorOption[] = [
+  { color: '#FFFF00', opacity: 0.45 }, // amarillo highlighter
+  { color: '#00CFFF', opacity: 0.45 }, // celeste
+  { color: '#FF3B30', opacity: 0.45 }, // rojo
+  { color: '#34C759', opacity: 0.45 }, // verde
+  { color: '#FF9500', opacity: 0.45 }, // naranja
+];
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function MaterialsScreen({ navigation }: any) {
@@ -80,7 +94,10 @@ export default function MaterialsScreen({ navigation }: any) {
   const canvasRef = useRef<DrawingCanvasRef>(null);
   const [canvasKey, setCanvasKey] = useState(0);
 
-  const [brushColor, setBrushColor] = useState('#FF3B30');
+  // FIX #2: guardamos los paths existentes para pasarlos al canvas al abrir
+  const [initialStrokes, setInitialStrokes] = useState<any[]>([]);
+
+  const [selectedColor, setSelectedColor] = useState<ColorOption>(COLOR_OPTIONS[0]);
   const [brushSize, setBrushSize] = useState(7);
   const [sliderVisible, setSliderVisible] = useState(false);
   const [sliderThumbY, setSliderThumbY] = useState(sizeToThumbY(7));
@@ -88,12 +105,9 @@ export default function MaterialsScreen({ navigation }: any) {
   const sliderStartY = useRef(0);
   const sliderStartThumbY = useRef(sizeToThumbY(7));
 
-  const colorOptions = ['#FF3B30', '#FF9500', '#34C759', '#007AFF', '#FFFFFF'];
-
   const [imgW, setImgW] = useState(SCREEN_WIDTH);
   const [imgH, setImgH] = useState(EDITOR_HEIGHT);
 
-  // ── Zoom / pan state (refs = no re-render, commitTransform triggers render) ──
   const scaleRef = useRef(1);
   const txRef = useRef(0);
   const tyRef = useRef(0);
@@ -102,29 +116,20 @@ export default function MaterialsScreen({ navigation }: any) {
   const commitTransform = () =>
     setViewTransform({ scale: scaleRef.current, tx: txRef.current, ty: tyRef.current });
 
-  // Clamp translation so you can't pan outside the image
   const clampTranslation = (tx: number, ty: number, s: number) => {
     const maxTx = (imgW * (s - 1)) / 2;
     const maxTy = (imgH * (s - 1)) / 2;
     return { tx: clamp(tx, -maxTx, maxTx), ty: clamp(ty, -maxTy, maxTy) };
   };
 
-  // ── Pinch tracking refs ──
   const isPinching = useRef(false);
   const lastPinchDist = useRef(0);
   const lastPinchMid = useRef({ x: 0, y: 0 });
-
-  // ── Wrapper View layout (to convert pageX/Y → local canvas coords) ──
   const wrapperLayout = useRef({ x: 0, y: 0 });
 
-  /**
-   * Convert an absolute screen point to canvas-space coordinates,
-   * undoing the current zoom+pan transform.
-   */
   const screenToCanvas = (pageX: number, pageY: number) => {
     const localX = pageX - wrapperLayout.current.x;
     const localY = pageY - wrapperLayout.current.y;
-    // The transform origin is the center of the image container
     const cx = imgW / 2;
     const cy = imgH / 2;
     const canvasX = (localX - cx - txRef.current) / scaleRef.current + cx;
@@ -132,7 +137,6 @@ export default function MaterialsScreen({ navigation }: any) {
     return { x: canvasX, y: canvasY };
   };
 
-  // ── Master PanResponder on the canvas wrapper ──
   const canvasPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -142,12 +146,11 @@ export default function MaterialsScreen({ navigation }: any) {
 
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
-
         if (touches.length >= 2) {
           isPinching.current = true;
           lastPinchDist.current = getTouchDist(touches[0], touches[1]);
           lastPinchMid.current = getTouchMid(touches[0], touches[1]);
-          canvasRef.current?.handleTouchEnd(); // finish any stroke in progress
+          canvasRef.current?.handleTouchEnd();
         } else {
           isPinching.current = false;
           const t = touches[0] ?? evt.nativeEvent;
@@ -158,9 +161,7 @@ export default function MaterialsScreen({ navigation }: any) {
 
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-
         if (touches.length >= 2) {
-          // Switch to pinch if a second finger landed mid-stroke
           if (!isPinching.current) {
             isPinching.current = true;
             lastPinchDist.current = getTouchDist(touches[0], touches[1]);
@@ -168,29 +169,18 @@ export default function MaterialsScreen({ navigation }: any) {
             canvasRef.current?.handleTouchEnd();
             return;
           }
-
           const newDist = getTouchDist(touches[0], touches[1]);
           const newMid = getTouchMid(touches[0], touches[1]);
-
-          // Scale
           const factor = newDist / lastPinchDist.current;
           const newScale = clamp(scaleRef.current * factor, MIN_SCALE, MAX_SCALE);
-
-          // Pan
           const dmx = newMid.x - lastPinchMid.current.x;
           const dmy = newMid.y - lastPinchMid.current.y;
-          const { tx, ty } = clampTranslation(
-            txRef.current + dmx,
-            tyRef.current + dmy,
-            newScale
-          );
-
+          const { tx, ty } = clampTranslation(txRef.current + dmx, tyRef.current + dmy, newScale);
           scaleRef.current = newScale;
           txRef.current = tx;
           tyRef.current = ty;
           lastPinchDist.current = newDist;
           lastPinchMid.current = newMid;
-
           commitTransform();
         } else if (!isPinching.current) {
           const t = touches[0] ?? evt.nativeEvent;
@@ -211,8 +201,6 @@ export default function MaterialsScreen({ navigation }: any) {
       },
     })
   ).current;
-
-  // ─── Slider PanResponder ──────────────────────────────────────────────────
 
   const sliderPanResponder = useRef(
     PanResponder.create({
@@ -287,16 +275,18 @@ export default function MaterialsScreen({ navigation }: any) {
   };
 
   const handleEdit = (mat: Material) => {
+    // FIX #2: cargamos los paths guardados antes de montar el canvas
+    setInitialStrokes(mat.paths ?? []);
     setActiveMaterial(mat);
-    setBrushColor(mat.assignedColor);
+    setSelectedColor(COLOR_OPTIONS[0]);
     setBrushSize(7);
     setSliderThumbY(sizeToThumbY(7));
     sliderThumbYRef.current = sizeToThumbY(7);
-    // Reset zoom
     scaleRef.current = 1;
     txRef.current = 0;
     tyRef.current = 0;
     setViewTransform({ scale: 1, tx: 0, ty: 0 });
+    // key +1 para re-montar el canvas con los nuevos initialStrokes
     setCanvasKey((k) => k + 1);
   };
 
@@ -324,15 +314,9 @@ export default function MaterialsScreen({ navigation }: any) {
         <View style={styles.header}>
           <Text style={styles.label}>EDITING</Text>
           <Text style={styles.title}>{activeMaterial.label}</Text>
-          <Text style={styles.subtitle}>
-            Pinch to zoom · Draw to mark zones.
-          </Text>
+          <Text style={styles.subtitle}>Pinch to zoom · Draw to mark zones.</Text>
         </View>
 
-        {/*
-          canvasWrapper captures ALL touches.
-          Inside it, image + SVG overlay move together via the transform.
-        */}
         <View
           style={styles.canvasWrapper}
           onLayout={(e) => {
@@ -342,11 +326,6 @@ export default function MaterialsScreen({ navigation }: any) {
           }}
           {...canvasPanResponder.panHandlers}
         >
-          {/*
-            This View is the thing that actually zooms/pans.
-            We apply the transform here so BOTH the image and the
-            SVG strokes move together as one unit.
-          */}
           <View
             style={[
               styles.imageContainer,
@@ -362,7 +341,7 @@ export default function MaterialsScreen({ navigation }: any) {
                 ],
               },
             ]}
-            pointerEvents="none" // touches handled by wrapper above
+            pointerEvents="none"
           >
             <Image
               source={{ uri: activeMaterial.uri }}
@@ -371,21 +350,22 @@ export default function MaterialsScreen({ navigation }: any) {
               onLoad={handleImageLoad}
             />
 
-            {/* SVG overlay sits on top of the image, same size, no separate transform needed */}
             <View style={StyleSheet.absoluteFill}>
+              {/* FIX #2: initialStrokes carga las zonas ya guardadas */}
               <DrawingCanvas
                 ref={canvasRef}
                 key={canvasKey}
                 width={imgW}
                 height={imgH}
-                brushColor={brushColor}
+                brushColor={selectedColor.color}
+                brushOpacity={selectedColor.opacity}
                 brushSize={brushSize}
                 strokeScale={viewTransform.scale}
+                initialStrokes={initialStrokes}
               />
             </View>
           </View>
 
-          {/* Brush size toggle */}
           <TouchableOpacity
             style={styles.sliderToggleBtn}
             onPress={() => setSliderVisible((v) => !v)}
@@ -401,12 +381,14 @@ export default function MaterialsScreen({ navigation }: any) {
                 <View style={[styles.trackFill, { height: SLIDER_HEIGHT - sliderThumbY }]} />
                 <View style={[styles.thumb, { top: sliderThumbY - 10 }]} />
               </View>
+              {/* Preview del color con su opacidad real */}
               <View
                 style={{
                   width: Math.max(4, brushSize * 0.65),
                   height: Math.max(4, brushSize * 0.65),
                   borderRadius: 20,
-                  backgroundColor: brushColor,
+                  backgroundColor: selectedColor.color,
+                  opacity: selectedColor.opacity,
                 }}
               />
             </View>
@@ -423,15 +405,19 @@ export default function MaterialsScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
 
+          {/* FIX #1: colores tipo highlighter semitransparentes */}
           <View style={styles.colorRow}>
-            {colorOptions.map((c) => (
+            {COLOR_OPTIONS.map((opt) => (
               <TouchableOpacity
-                key={c}
-                onPress={() => setBrushColor(c)}
+                key={opt.color}
+                onPress={() => setSelectedColor(opt)}
                 style={[
                   styles.colorDotPicker,
-                  { backgroundColor: c },
-                  brushColor === c && styles.colorDotSelected,
+                  {
+                    backgroundColor: opt.color,
+                    opacity: selectedColor.color === opt.color ? 1 : 0.4,
+                  },
+                  selectedColor.color === opt.color && styles.colorDotSelected,
                 ]}
               />
             ))}
@@ -562,9 +548,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
   },
-  imageContainer: {
-    position: 'absolute',
-  },
+  imageContainer: { position: 'absolute' },
   sliderToggleBtn: {
     position: 'absolute',
     right: 14,

@@ -16,6 +16,7 @@ interface Stroke {
   points: Point[];
   color: string;
   size: number;
+  opacity: number;
 }
 
 export interface DrawingCanvasRef {
@@ -23,7 +24,6 @@ export interface DrawingCanvasRef {
   redo: () => void;
   clear: () => void;
   getPaths: () => Stroke[];
-  // Called by parent with canvas-space coordinates
   handleTouchStart: (x: number, y: number) => void;
   handleTouchMove: (x: number, y: number) => void;
   handleTouchEnd: () => void;
@@ -34,7 +34,9 @@ interface Props {
   height: number;
   brushColor?: string;
   brushSize?: number;
-  strokeScale?: number; // passed from parent so strokes look same size at any zoom
+  brushOpacity?: number;
+  strokeScale?: number;
+  initialStrokes?: Stroke[];
   onStrokesChange?: (strokes: Stroke[]) => void;
 }
 
@@ -51,17 +53,19 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(
     {
       width,
       height,
-      brushColor = '#FF3B30',
+      brushColor = '#FFFF00',
       brushSize = 4,
+      brushOpacity = 0.45,
       strokeScale = 1,
+      initialStrokes = [],
       onStrokesChange,
     },
     ref
   ) => {
-    const [strokes, setStrokes] = useState<Stroke[]>([]);
+    const [strokes, setStrokes] = useState<Stroke[]>(initialStrokes);
     const redoStack = useRef<Stroke[]>([]);
     const currentStroke = useRef<Point[]>([]);
-    const strokesRef = useRef<Stroke[]>([]);
+    const strokesRef = useRef<Stroke[]>(initialStrokes);
 
     const updateStrokes = (newStrokes: Stroke[]) => {
       strokesRef.current = newStrokes;
@@ -100,6 +104,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(
             points: [...currentStroke.current],
             color: brushColor,
             size: brushSize,
+            opacity: brushOpacity,
           },
         ]);
       },
@@ -112,6 +117,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(
               points: currentStroke.current,
               color: brushColor,
               size: brushSize,
+              opacity: brushOpacity,
             },
           ]);
           currentStroke.current = [];
@@ -120,7 +126,6 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(
     }));
 
     return (
-      // pointerEvents="none" — all touches handled by the parent wrapper
       <View
         style={[styles.container, { width, height }]}
         pointerEvents="none"
@@ -135,6 +140,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasRef, Props>(
               strokeLinecap="round"
               strokeLinejoin="round"
               fill="none"
+              strokeOpacity={stroke.opacity ?? 0.45}
             />
           ))}
         </Svg>
